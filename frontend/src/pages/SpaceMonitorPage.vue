@@ -8,6 +8,7 @@ const spaces = ref([]);
 const stats = ref({});
 const loading = ref(false);
 const error = ref("");
+const updatingId = ref(null);
 
 const statItems = computed(() => [
   { label: "总车位", value: spaces.value.length },
@@ -31,10 +32,28 @@ async function loadSpaces() {
   }
 }
 
-async function updateStatus(space, status) {
-  const plate = status === "occupied" ? space.plate_number || "临A00001" : null;
-  await parkingApi.updateSpace(space.id, { status, plate_number: plate });
-  await loadSpaces();
+async function handleStatusChange(space, event) {
+  const newStatus = event.target.value;
+  const oldStatus = space.status;
+  if (newStatus === oldStatus) return;
+
+  const spaceIndex = spaces.value.findIndex((s) => s.id === space.id);
+  if (spaceIndex === -1) return;
+
+  updatingId.value = space.id;
+  error.value = "";
+
+  const plate = newStatus === "occupied" ? space.plate_number || "临A00001" : null;
+
+  try {
+    await parkingApi.updateSpace(space.id, { status: newStatus, plate_number: plate });
+    await loadSpaces();
+  } catch (err) {
+    event.target.value = oldStatus;
+    error.value = `操作失败：${err.message}（${space.code} 状态已回滚）`;
+  } finally {
+    updatingId.value = null;
+  }
 }
 
 onMounted(loadSpaces);
@@ -47,7 +66,9 @@ onMounted(loadSpaces);
         <h2>车位状态监控</h2>
         <p>实时查看车位占用、预约和维护状态。</p>
       </div>
-      <button class="primary-button" type="button" @click="loadSpaces">刷新</button>
+      <button class="primary-button" type="button" @click="loadSpaces" :disabled="loading">
+        {{ loading ? '刷新中...' : '刷新' }}
+      </button>
     </header>
 
     <StatGrid :stats="statItems" />
@@ -61,7 +82,11 @@ onMounted(loadSpaces);
         </div>
         <StatusBadge :status="space.status" />
         <p>{{ space.plate_number || "无绑定车辆" }}</p>
-        <select :value="space.status" @change="updateStatus(space, $event.target.value)">
+        <select
+          :value="space.status"
+          :disabled="updatingId === space.id"
+          @change="handleStatusChange(space, $event)"
+        >
           <option value="free">空闲</option>
           <option value="occupied">占用</option>
           <option value="reserved">预约</option>
