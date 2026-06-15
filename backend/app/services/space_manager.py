@@ -1,7 +1,17 @@
-from ..database import get_connection
+class SpaceInUseError(Exception):
+    pass
+
+
+class InvalidSpaceTransitionError(Exception):
+    pass
+
+
+class SpaceNotFoundError(Exception):
+    pass
 
 
 VALID_OCCUPY_STATUSES = {"free", "reserved"}
+VALID_STATUSES = {"free", "occupied", "reserved", "maintenance"}
 
 
 def get_space_by_code(conn, code):
@@ -31,6 +41,18 @@ def can_occupy(space):
     return space["status"] in VALID_OCCUPY_STATUSES
 
 
+def _has_active_parking_order(conn, space_code):
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM parking_orders
+        WHERE space_code = ? AND status = 'parking'
+        """,
+        (space_code,),
+    ).fetchone()
+    return row["count"] > 0
+
+
 def occupy_space(conn, code, plate_number):
     conn.execute(
         """
@@ -43,6 +65,8 @@ def occupy_space(conn, code, plate_number):
 
 
 def release_space(conn, code):
+    if _has_active_parking_order(conn, code):
+        raise SpaceInUseError("该车位存在未结算订单，请先完成结算后再释放")
     conn.execute(
         """
         UPDATE spaces
@@ -54,9 +78,17 @@ def release_space(conn, code):
 
 
 def update_space_status(conn, space_id, status, plate_number):
-    allowed = {"free", "occupied", "reserved", "maintenance"}
-    if status not in allowed:
+    if status not in VALID_STATUSES:
         raise ValueError("车位状态不合法")
+
+    space = get_space_by_id(conn, space_id)
+    if not space:
+        raise SpaceNotFoundError("车位不存在")
+
+    if space["status"] == "occupied" and status == "free":
+        if _has_active_parking_order(conn, space["code"]):
+            raise SpaceInUseError("该车位存在未结算订单，请先完成对应车辆结算后再释放")
+
     conn.execute(
         """
         UPDATE spaces

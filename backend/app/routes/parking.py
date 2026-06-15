@@ -6,11 +6,13 @@ from ..services.parking_order import (
     list_recent_orders,
     create_entry,
     settle_order,
+    release_space_by_order,
     ValidationError,
     SpaceNotFoundError,
     SpaceNotAvailableError,
     OrderNotFoundError,
     OrderAlreadyPaidError,
+    OrderNotPaidError,
 )
 
 parking_bp = Blueprint("parking", __name__)
@@ -62,3 +64,15 @@ def close_order(order_id):
     except OrderAlreadyPaidError as e:
         return {"message": str(e)}, 409
     return dict(row)
+
+
+@parking_bp.post("/release/<int:order_id>")
+def release_space(order_id):
+    try:
+        with get_connection() as conn:
+            space = release_space_by_order(conn, order_id)
+    except OrderNotFoundError as e:
+        return {"message": str(e)}, 404
+    except OrderNotPaidError as e:
+        return {"message": str(e)}, 409
+    return dict(space)

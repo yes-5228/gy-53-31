@@ -3,6 +3,7 @@ from datetime import datetime
 from ..database import get_connection
 from .billing import calculate_fee
 from .space_manager import (
+    SpaceInUseError,
     get_space_by_code,
     can_occupy,
     occupy_space,
@@ -15,6 +16,10 @@ class OrderNotFoundError(Exception):
 
 
 class OrderAlreadyPaidError(Exception):
+    pass
+
+
+class OrderNotPaidError(Exception):
     pass
 
 
@@ -84,5 +89,15 @@ def settle_order(conn, order_id, exit_time=None):
         """,
         (exit_time, bill["duration_hours"], bill["amount"], order_id),
     )
-    release_space(conn, order["space_code"])
     return conn.execute("SELECT * FROM parking_orders WHERE id = ?", (order_id,)).fetchone()
+
+
+def release_space_by_order(conn, order_id):
+    order = get_order_by_id(conn, order_id)
+    if not order:
+        raise OrderNotFoundError("停车订单不存在")
+    if order["status"] != "paid":
+        raise OrderNotPaidError("订单未结算，不能释放车位")
+
+    release_space(conn, order["space_code"])
+    return get_space_by_code(conn, order["space_code"])

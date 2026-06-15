@@ -6,6 +6,8 @@ from ..services.space_manager import (
     get_space_stats,
     get_space_by_id,
     update_space_status,
+    SpaceInUseError,
+    SpaceNotFoundError,
 )
 
 spaces_bp = Blueprint("spaces", __name__)
@@ -30,6 +32,10 @@ def update_space(space_id):
             update_space_status(conn, space_id, status, plate_number)
         except ValueError as e:
             return {"message": str(e)}, 400
+        except SpaceNotFoundError as e:
+            return {"message": str(e)}, 404
+        except SpaceInUseError as e:
+            return {"message": str(e)}, 409
         row = get_space_by_id(conn, space_id)
 
     if not row:
